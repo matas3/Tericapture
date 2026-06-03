@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Fixed Hex Territory Game</title>
+<title>Marijampolė Hex Grid</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -31,12 +31,12 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// 🌍 FIXED GAME ORIGIN (Marijampolė)
+// 🌍 CITY CENTER (Marijampolė)
 const ORIGIN_LAT = 54.5599;
 const ORIGIN_LNG = 23.3541;
 
-// 🗺️ Map
-const map = L.map('map').setView([ORIGIN_LAT, ORIGIN_LNG], 16);
+// 🗺️ MAP
+const map = L.map('map').setView([ORIGIN_LAT, ORIGIN_LNG], 14);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap'
@@ -45,24 +45,26 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 // =========================
 // ⚙️ GRID SETTINGS
 // =========================
-const HEX_SIZE = 30; // meters
-const GRID_RADIUS = 12;
+const HEX_SIZE = 40; // meters (slightly bigger = better GPS stability)
+const GRID_RANGE = 60; // coverage of city
 
-// Earth constants
 const METERS_PER_LAT = 111320;
+const COS_LAT = Math.cos(ORIGIN_LAT * Math.PI / 180);
 
-// convert meters → lat/lng
-function metersToLatLng(dx, dy) {
-  const lat = ORIGIN_LAT + (dy / METERS_PER_LAT);
-  const lng = ORIGIN_LNG + (dx / (METERS_PER_LAT * Math.cos(ORIGIN_LAT * Math.PI/180)));
+// =========================
+// 📐 COORD CONVERSION
+// =========================
+function metersToLatLng(x, y) {
+  const lat = ORIGIN_LAT + (y / METERS_PER_LAT);
+  const lng = ORIGIN_LNG + (x / (METERS_PER_LAT * COS_LAT));
   return [lat, lng];
 }
 
 // =========================
 // 🧱 HEX SHAPE
 // =========================
-function hexCorners(cx, cy) {
-  const points = [];
+function hexShape(cx, cy) {
+  const pts = [];
 
   for (let i = 0; i < 6; i++) {
     const angle = (Math.PI / 3) * i;
@@ -70,32 +72,33 @@ function hexCorners(cx, cy) {
     const x = cx + HEX_SIZE * Math.cos(angle);
     const y = cy + HEX_SIZE * Math.sin(angle);
 
-    const [lat, lng] = metersToLatLng(x, y);
-    points.push([lat, lng]);
+    pts.push(metersToLatLng(x, y));
   }
 
-  return points;
+  return pts;
 }
 
 // =========================
-// 🧱 FIXED GRID GENERATION
+// 🧱 CLEAN GRID (NO DIAGONAL SHIFT)
 // =========================
 const hexes = [];
 
-function axialToPixel(q, r) {
-  const x = HEX_SIZE * 1.5 * q;
-  const y = HEX_SIZE * Math.sqrt(3) * (r + q / 2);
-  return {x, y};
-}
+for (let q = -GRID_RANGE; q <= GRID_RANGE; q++) {
+  for (let r = -GRID_RANGE; r <= GRID_RANGE; r++) {
 
-for (let q = -GRID_RADIUS; q <= GRID_RADIUS; q++) {
-  for (let r = -GRID_RADIUS; r <= GRID_RADIUS; r++) {
+    // 👉 TRUE square-like spacing first
+    const x = q * (HEX_SIZE * 1.5);
+    const y = r * (HEX_SIZE * Math.sqrt(3));
 
-    const pos = axialToPixel(q, r);
+    // offset every other row (hex packing)
+    const offsetX = (r % 2) * (HEX_SIZE * 0.75);
 
-    const latlng = metersToLatLng(pos.x, pos.y);
+    const finalX = x + offsetX;
+    const finalY = y;
 
-    const poly = L.polygon(hexCorners(pos.x, pos.y), {
+    const [lat, lng] = metersToLatLng(finalX, finalY);
+
+    const poly = L.polygon(hexShape(finalX, finalY), {
       color: "gray",
       fillColor: "gray",
       fillOpacity: 0.25,
@@ -103,11 +106,10 @@ for (let q = -GRID_RADIUS; q <= GRID_RADIUS; q++) {
     }).addTo(map);
 
     hexes.push({
-      q, r,
-      x: pos.x,
-      y: pos.y,
-      lat: latlng[0],
-      lng: latlng[1],
+      x: finalX,
+      y: finalY,
+      lat,
+      lng,
       owner: "neutral",
       poly
     });
@@ -119,8 +121,10 @@ for (let q = -GRID_RADIUS; q <= GRID_RADIUS; q++) {
 // =========================
 let playerMarker = null;
 
-// distance in meters (approx planar)
-function dist2(x1,y1,x2,y2){
+// =========================
+// 📏 DISTANCE
+// =========================
+function dist(x1,y1,x2,y2){
   return Math.sqrt((x1-x2)**2 + (y1-y2)**2);
 }
 
@@ -135,22 +139,20 @@ function updatePlayer(lat, lng) {
     playerMarker.setLatLng([lat, lng]);
   }
 
-  // convert player position to game plane
-  const dx = (lng - ORIGIN_LNG) * METERS_PER_LAT * Math.cos(ORIGIN_LAT*Math.PI/180);
+  const dx = (lng - ORIGIN_LNG) * METERS_PER_LAT * COS_LAT;
   const dy = (lat - ORIGIN_LAT) * METERS_PER_LAT;
 
   let nearest = null;
   let best = Infinity;
 
   for (const h of hexes) {
-    const d = dist2(dx, dy, h.x, h.y);
+    const d = dist(dx, dy, h.x, h.y);
     if (d < best) {
       best = d;
       nearest = h;
     }
   }
 
-  // capture rule
   if (nearest && best < HEX_SIZE) {
     nearest.owner = "you";
 
@@ -161,7 +163,7 @@ function updatePlayer(lat, lng) {
   }
 
   document.getElementById("hud").innerHTML =
-    `Fixed Hex Game<br>
+    `Marijampolė Territory Grid<br>
      Hexes: ${hexes.length}<br>
      Lat: ${lat.toFixed(5)}<br>
      Lng: ${lng.toFixed(5)}`;
@@ -172,7 +174,7 @@ function updatePlayer(lat, lng) {
 // =========================
 navigator.geolocation.watchPosition((pos) => {
   updatePlayer(pos.coords.latitude, pos.coords.longitude);
-  map.setView([pos.coords.latitude, pos.coords.longitude], 17);
+  map.setView([pos.coords.latitude, pos.coords.longitude], 15);
 });
 
 </script>
