@@ -1,94 +1,191 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>My Location Map</title>
+<meta charset="UTF-8">
+<title>Hex Territory Game</title>
 
-  <!-- Leaflet CSS -->
-  <link
-    rel="stylesheet"
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-    }
+<style>
+  body { margin: 0; }
+  #map { height: 100vh; }
 
-    #map {
-      height: 100vh;
-      width: 100%;
-    }
-
-    .info {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: white;
-      padding: 10px;
-      z-index: 1000;
-      font-family: Arial;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-    }
-  </style>
+  .hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    background: white;
+    padding: 10px;
+    z-index: 1000;
+    font-family: Arial;
+    border-radius: 8px;
+  }
+</style>
 </head>
 
 <body>
 
-<div class="info">
-  📍 Tracking your location...
-</div>
-
+<div class="hud" id="hud">Loading...</div>
 <div id="map"></div>
 
-<!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-  // 1. Create map (default center until GPS loads)
-  const map = L.map('map').setView([54.6872, 25.2797], 13);
+const map = L.map('map').setView([54.6872, 25.2797], 16);
 
-  // 2. Load OpenStreetMap tiles
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+// Base map
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap'
+}).addTo(map);
 
-  let marker = null;
+// ============================
+// 🟡 HEX GRID SETTINGS
+// ============================
+const HEX_RADIUS = 30; // meters (your requirement)
 
-  // 3. Get live location
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+// center of grid (Vilnius)
+const centerLat = 54.6872;
+const centerLng = 25.2797;
 
-        // Move map to your location
-        map.setView([lat, lng], 16);
+// store hexes
+const hexes = [];
 
-        // If marker exists, update it
-        if (marker) {
-          marker.setLatLng([lat, lng]);
-        } else {
-          marker = L.marker([lat, lng])
-            .addTo(map)
-            .bindPopup("You are here")
-            .openPopup();
-        }
-      },
-      (error) => {
-        alert("Location access denied or unavailable.");
-        console.error(error);
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 1000
-      }
-    );
-  } else {
-    alert("Geolocation is not supported in your browser.");
+// ============================
+// 📐 GEO HELPERS
+// ============================
+
+// meters → lat/lng offset
+function offsetLatLng(lat, lng, dx, dy) {
+  const earth = 6378137;
+
+  const newLat = lat + (dy / earth) * (180 / Math.PI);
+  const newLng = lng + (dx / earth) * (180 / Math.PI) / Math.cos(lat * Math.PI/180);
+
+  return [newLat, newLng];
+}
+
+// hex corner points
+function createHex(lat, lng, size) {
+  const points = [];
+
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i;
+    const dx = size * Math.cos(angle);
+    const dy = size * Math.sin(angle);
+
+    const [pLat, pLng] = offsetLatLng(lat, lng, dx, dy);
+    points.push([pLat, pLng]);
   }
+
+  return points;
+}
+
+// distance check (fast version)
+function dist(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ============================
+// 🧩 BUILD HEX GRID
+// ============================
+
+// how many hexes around player area
+const GRID_SIZE = 12;
+
+for (let x = -GRID_SIZE; x <= GRID_SIZE; x++) {
+  for (let y = -GRID_SIZE; y <= GRID_SIZE; y++) {
+
+    const dx = x * 45;  // spacing
+    const dy = y * 40;
+
+    const [lat, lng] = offsetLatLng(centerLat, centerLng, dx, dy);
+
+    const hex = {
+      lat,
+      lng,
+      owner: "neutral",
+      poly: null
+    };
+
+    const polygon = L.polygon(createHex(lat, lng, HEX_RADIUS), {
+      color: "gray",
+      fillColor: "gray",
+      fillOpacity: 0.3,
+      weight: 1
+    }).addTo(map);
+
+    hex.poly = polygon;
+    hexes.push(hex);
+  }
+}
+
+// ============================
+// 👤 PLAYER
+// ============================
+let playerMarker = null;
+
+// ============================
+// 🎮 GAME LOGIC
+// ============================
+function updatePlayer(lat, lng) {
+
+  if (!playerMarker) {
+    playerMarker = L.marker([lat, lng]).addTo(map);
+  } else {
+    playerMarker.setLatLng([lat, lng]);
+  }
+
+  // check nearest hex
+  let nearest = null;
+  let bestDist = Infinity;
+
+  for (const h of hexes) {
+    const d = dist(lat, lng, h.lat, h.lng);
+    if (d < bestDist) {
+      bestDist = d;
+      nearest = h;
+    }
+  }
+
+  // capture logic (entering hex)
+  if (nearest && bestDist < 30) {
+    nearest.owner = "you";
+
+    nearest.poly.setStyle({
+      color: "blue",
+      fillColor: "blue"
+    });
+  }
+}
+
+// ============================
+// 📍 GPS TRACKING
+// ============================
+navigator.geolocation.watchPosition((pos) => {
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+
+  map.setView([lat, lng], 17);
+
+  updatePlayer(lat, lng);
+
+  document.getElementById("hud").innerHTML =
+    `Hex game active<br>
+     Lat: ${lat.toFixed(5)}<br>
+     Lng: ${lng.toFixed(5)}`;
+
+});
+
 </script>
 
 </body>
