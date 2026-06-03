@@ -7,8 +7,13 @@ if (!playerId) {
 
 let playerColor = localStorage.getItem("playerColor");
 
+const randomColor = () =>
+    '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+
+let playerColor = localStorage.getItem("playerColor");
+
 if (!playerColor) {
-    playerColor = `hsl(${Math.random() * 360}, 80%, 50%)`;
+    playerColor = randomColor();
     localStorage.setItem("playerColor", playerColor);
 }
 
@@ -235,4 +240,3 @@ navigator.geolocation.watchPosition(
         enableHighAccuracy: true
     }
 );
-
