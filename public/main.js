@@ -108,8 +108,8 @@ function drawTile(tileX, tileY, color) {
     const step = setInterval(() => {
         opacity += 0.1;
 
-        if (opacity >= 0.4) {
-            opacity = 0.5;
+        if (opacity >= 0.5) {
+            opacity = 0.6;
             clearInterval(step);
         }
 
