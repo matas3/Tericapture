@@ -5,16 +5,21 @@ if (!playerId) {
     localStorage.setItem("playerId", playerId);
 }
 
-let playerColor = localStorage.getItem("playerColor");
+// =========================
+// BACKEND PLAYER COLOR
+// =========================
 
-const randomColor = () =>
-    '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+let playerColor = null;
 
-let playerColor = localStorage.getItem("playerColor");
+async function loadPlayerColor() {
+    const res = await fetch("/player", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: playerId })
+    });
 
-if (!playerColor) {
-    playerColor = randomColor();
-    localStorage.setItem("playerColor", playerColor);
+    const data = await res.json();
+    playerColor = data.color;
 }
 
 // =========================
@@ -29,11 +34,11 @@ const map = L.map("map").setView([ORIGIN_LAT, ORIGIN_LNG], 15);
 const roads = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 
 const satellite = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}"
 );
 
 const labels = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{x}/{y}"
 );
 
 satellite.addTo(map);
@@ -101,14 +106,14 @@ function drawTile(tileX, tileY, color) {
 
     rendered.set(key, poly);
 
-    // smooth fade-in
+    // fade in
     let opacity = 0;
 
     const step = setInterval(() => {
         opacity += 0.1;
 
         if (opacity >= 0.4) {
-            opacity = 0.5;
+            opacity = 0.4;
             clearInterval(step);
         }
 
@@ -118,31 +123,23 @@ function drawTile(tileX, tileY, color) {
 }
 
 // =========================
-// LOAD WORLD FROM DB (IMPORTANT PART)
+// LOAD WORLD FROM DB
 // =========================
 
 async function loadWorldFromDB() {
-    try {
-        const res = await fetch("/territory");
-        const data = await res.json();
+    const res = await fetch("/territory");
+    const data = await res.json();
 
-        for (const key in data) {
-            const [x, y] = key.split(",").map(Number);
-            drawTile(x, y, data[key].color);
-        }
-
-        console.log("World loaded from DB:", Object.keys(data).length, "tiles");
-
-    } catch (err) {
-        console.error("Failed to load world:", err);
+    for (const key in data) {
+        const [x, y] = key.split(",").map(Number);
+        drawTile(x, y, data[key].color);
     }
+
+    console.log("World loaded:", Object.keys(data).length);
 }
 
-// run immediately on startup
-loadWorldFromDB();
-
 // =========================
-// PLAYER
+// PLAYER UPDATE
 // =========================
 
 function updatePlayer(lat, lng) {
@@ -173,7 +170,7 @@ function updatePlayer(lat, lng) {
 }
 
 // =========================
-// WEBSOCKET (REALTIME SYNC)
+// WEBSOCKET
 // =========================
 
 const socket = new WebSocket(`ws://${location.host}/ws`);
@@ -187,7 +184,7 @@ socket.onmessage = (event) => {
 };
 
 // =========================
-// MAP SWITCH BUTTON
+// MAP SWITCH
 // =========================
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -223,20 +220,25 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // =========================
-// GPS TRACKING
+// START GAME (IMPORTANT)
 // =========================
 
-navigator.geolocation.watchPosition(
-    (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
+(async () => {
 
-        map.setView([lat, lng], 16);
+    await loadPlayerColor();
+    await loadWorldFromDB();
 
-        updatePlayer(lat, lng);
-    },
-    () => alert("GPS permission required"),
-    {
-        enableHighAccuracy: true
-    }
-);
+    navigator.geolocation.watchPosition(
+        (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+
+            map.setView([lat, lng], 16);
+
+            updatePlayer(lat, lng);
+        },
+        () => alert("GPS permission required"),
+        { enableHighAccuracy: true }
+    );
+
+})();
