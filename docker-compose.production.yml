@@ -1,0 +1,13 @@
+services:
+  game-server:
+    build: .
+    restart: unless-stopped
+
+    ports:
+      - "3452:3000"
+
+    environment:
+      - NODE_ENV=production
+
+    volumes:
+      - ./game.db:/app/game.db
