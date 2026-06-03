@@ -44,7 +44,7 @@ labels.addTo(map);
 // TILE SYSTEM
 // =========================
 
-const TILE_SIZE = 50;
+const TILE_SIZE = 37;
 const METERS_PER_LAT = 111320;
 const COS_LAT = Math.cos(ORIGIN_LAT * Math.PI / 180);
 
@@ -180,7 +180,8 @@ function updatePlayer(lat, lng) {
 // WEBSOCKET (REALTIME SYNC)
 // =========================
 
-const socket = new WebSocket(`ws://${location.host}/ws`);
+const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+const socket = new WebSocket(`${wsProtocol}//${location.host}/ws`);
 
 socket.onmessage = (event) => {
     const data = JSON.parse(event.data);
@@ -243,4 +244,8 @@ navigator.geolocation.watchPosition(
     {
         enableHighAccuracy: true
     }
+<<<<<<< Updated upstream
 );
+=======
+);
+>>>>>>> Stashed changes

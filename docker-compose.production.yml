@@ -4,10 +4,13 @@ services:
     restart: unless-stopped
 
     ports:
-      - "3452:3000"
+      - "127.0.0.1:3452:3000"
 
     environment:
       - NODE_ENV=production
 
     volumes:
-      - ./game.db:/app/game.db
+      - database:/app/data
+
+volumes:
+  database:

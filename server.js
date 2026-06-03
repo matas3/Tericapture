@@ -2,7 +2,7 @@ const fastify = require("fastify")({ logger: true });
 const path = require("path");
 
 const Database = require("better-sqlite3");
-const db = new Database("game.db");
+const db = new Database("data/game.db");
 
 // =========================
 // WEBSOCKETS
