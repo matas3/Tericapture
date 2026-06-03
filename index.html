@@ -2,31 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Tericapture</title>
+<title>Tericapture - Optimized</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-  body { margin: 0; overflow: hidden; }
+body {
+    margin: 0;
+    overflow: hidden;
+}
 
-  #map {
-    height: 100vh;
+#map {
     width: 100vw;
-  }
+    height: 100vh;
+}
 
-  .hud {
+.hud {
     position: absolute;
     top: 10px;
     left: 10px;
     z-index: 1000;
     background: white;
     padding: 10px;
-    font-family: Arial;
     border-radius: 8px;
+    font-family: Arial;
     font-size: 14px;
-  }
+}
 </style>
 </head>
 
@@ -38,146 +41,143 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-// 🌍 Marijampolė center
+
+// ======================================
+// 🌍 ORIGIN (Marijampolė)
+// ======================================
+
 const ORIGIN_LAT = 54.5599;
 const ORIGIN_LNG = 23.3541;
 
-// 🗺️ Map
-const map = L.map('map', {
-  zoomControl: true,
-  dragging: true,
-  tap: true
-}).setView([ORIGIN_LAT, ORIGIN_LNG], 14);
+// ======================================
+// 🗺️ MAP
+// ======================================
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap'
+const map = L.map("map").setView([ORIGIN_LAT, ORIGIN_LNG], 15);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap"
 }).addTo(map);
 
-// =========================
+// ======================================
 // ⚙️ SETTINGS
-// =========================
-const TILE_SIZE = 60; // meters per square
-const RANGE = 30;     // grid radius
+// ======================================
+
+const TILE_SIZE = 80; // meters per tile
 
 const METERS_PER_LAT = 111320;
 const COS_LAT = Math.cos(ORIGIN_LAT * Math.PI / 180);
 
-// =========================
+// ======================================
+// 🧠 STORAGE
+// ======================================
+
+const capturedTiles = new Set();
+const rendered = new Map();
+
+let playerMarker = null;
+
+// ======================================
 // 📐 CONVERSION
-// =========================
+// ======================================
+
 function metersToLatLng(x, y) {
-  const lat = ORIGIN_LAT + (y / METERS_PER_LAT);
-  const lng = ORIGIN_LNG + (x / (METERS_PER_LAT * COS_LAT));
-  return [lat, lng];
+    const lat = ORIGIN_LAT + (y / METERS_PER_LAT);
+    const lng = ORIGIN_LNG + (x / (METERS_PER_LAT * COS_LAT));
+    return [lat, lng];
 }
 
-// =========================
-// 🟩 TILE STORAGE
-// =========================
-const tiles = [];
+function latLngToMeters(lat, lng) {
+    return {
+        x: (lng - ORIGIN_LNG) * METERS_PER_LAT * COS_LAT,
+        y: (lat - ORIGIN_LAT) * METERS_PER_LAT
+    };
+}
 
-// =========================
-// 🧱 BUILD GRID (CLEAN SQUARES)
-// =========================
-for (let x = -RANGE; x <= RANGE; x++) {
-  for (let y = -RANGE; y <= RANGE; y++) {
+// ======================================
+// 🟦 DRAW ONLY CAPTURED TILE
+// ======================================
 
-    const mx = x * TILE_SIZE;
-    const my = y * TILE_SIZE;
+function drawTile(tileX, tileY) {
 
-    const size = TILE_SIZE / 2;
+    const key = tileX + "," + tileY;
+
+    if (rendered.has(key)) return;
+
+    const mx = tileX * TILE_SIZE;
+    const my = tileY * TILE_SIZE;
+    const half = TILE_SIZE / 2;
 
     const corners = [
-      metersToLatLng(mx - size, my - size),
-      metersToLatLng(mx + size, my - size),
-      metersToLatLng(mx + size, my + size),
-      metersToLatLng(mx - size, my + size)
+        metersToLatLng(mx - half, my - half),
+        metersToLatLng(mx + half, my - half),
+        metersToLatLng(mx + half, my + half),
+        metersToLatLng(mx - half, my + half)
     ];
 
     const poly = L.polygon(corners, {
-      color: "gray",
-      fillColor: "gray",
-      fillOpacity: 0.25,
-      weight: 1
+        color: "blue",
+        fillColor: "blue",
+        fillOpacity: 0.4,
+        weight: 0
     }).addTo(map);
 
-    tiles.push({
-      x: mx,
-      y: my,
-      owner: "neutral",
-      poly
-    });
-  }
+    rendered.set(key, poly);
 }
 
-// =========================
+// ======================================
 // 👤 PLAYER
-// =========================
-let playerMarker = null;
+// ======================================
 
-// =========================
-// 📏 DISTANCE
-// =========================
-function dist(x1,y1,x2,y2){
-  return Math.sqrt((x1-x2)**2 + (y1-y2)**2);
-}
-
-// =========================
-// 🎮 GAME LOGIC
-// =========================
 function updatePlayer(lat, lng) {
 
-  if (!playerMarker) {
-    playerMarker = L.marker([lat, lng]).addTo(map);
-  } else {
-    playerMarker.setLatLng([lat, lng]);
-  }
-
-  const dx = (lng - ORIGIN_LNG) * METERS_PER_LAT * COS_LAT;
-  const dy = (lat - ORIGIN_LAT) * METERS_PER_LAT;
-
-  let nearest = null;
-  let best = Infinity;
-
-  for (const t of tiles) {
-    const d = dist(dx, dy, t.x, t.y);
-    if (d < best) {
-      best = d;
-      nearest = t;
+    if (!playerMarker) {
+        playerMarker = L.marker([lat, lng]).addTo(map);
+    } else {
+        playerMarker.setLatLng([lat, lng]);
     }
-  }
 
-  // capture logic
-  if (nearest && best < TILE_SIZE) {
-    nearest.owner = "you";
+    const pos = latLngToMeters(lat, lng);
 
-    nearest.poly.setStyle({
-      color: "blue",
-      fillColor: "blue"
-    });
-  }
+    const tileX = Math.floor(pos.x / TILE_SIZE);
+    const tileY = Math.floor(pos.y / TILE_SIZE);
 
-  document.getElementById("hud").innerHTML =
-    `Square Territory Game<br>
-     Tiles: ${tiles.length}<br>
-     Lat: ${lat.toFixed(5)}<br>
-     Lng: ${lng.toFixed(5)}`;
+    const key = tileX + "," + tileY;
+
+    if (!capturedTiles.has(key)) {
+
+        capturedTiles.add(key);
+
+        drawTile(tileX, tileY);
+    }
+
+    document.getElementById("hud").innerHTML =
+        `Captured: ${capturedTiles.size}<br>
+         Lat: ${lat.toFixed(5)}<br>
+         Lng: ${lng.toFixed(5)}`;
 }
 
-// =========================
+// ======================================
 // 📍 GPS
-// =========================
-navigator.geolocation.watchPosition((pos) => {
-  const lat = pos.coords.latitude;
-  const lng = pos.coords.longitude;
+// ======================================
 
-  map.setView([lat, lng], 16);
+navigator.geolocation.watchPosition(
+    (pos) => {
 
-  updatePlayer(lat, lng);
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
 
-}, (err) => {
-  alert("GPS not allowed");
-});
+        map.setView([lat, lng], 16);
+
+        updatePlayer(lat, lng);
+    },
+    (err) => {
+        alert("GPS permission required");
+    },
+    {
+        enableHighAccuracy: true
+    }
+);
 
 </script>
 
