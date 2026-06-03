@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Hex Territory Game</title>
+<title>Fixed Hex Territory Game</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -14,9 +14,9 @@
     position: absolute;
     top: 10px;
     left: 10px;
+    z-index: 1000;
     background: white;
     padding: 10px;
-    z-index: 1000;
     font-family: Arial;
     border-radius: 8px;
   }
@@ -31,112 +31,102 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-const map = L.map('map').setView([54.6872, 25.2797], 16);
+// 🌍 FIXED GAME ORIGIN (Marijampolė)
+const ORIGIN_LAT = 54.5599;
+const ORIGIN_LNG = 23.3541;
 
-// Base map
+// 🗺️ Map
+const map = L.map('map').setView([ORIGIN_LAT, ORIGIN_LNG], 16);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap'
 }).addTo(map);
 
-// ============================
-// 🟡 HEX GRID SETTINGS
-// ============================
-const HEX_RADIUS = 30; // meters (your requirement)
+// =========================
+// ⚙️ GRID SETTINGS
+// =========================
+const HEX_SIZE = 30; // meters
+const GRID_RADIUS = 12;
 
-// center of grid (Vilnius)
-const centerLat = 54.6872;
-const centerLng = 25.2797;
+// Earth constants
+const METERS_PER_LAT = 111320;
 
-// store hexes
-const hexes = [];
-
-// ============================
-// 📐 GEO HELPERS
-// ============================
-
-// meters → lat/lng offset
-function offsetLatLng(lat, lng, dx, dy) {
-  const earth = 6378137;
-
-  const newLat = lat + (dy / earth) * (180 / Math.PI);
-  const newLng = lng + (dx / earth) * (180 / Math.PI) / Math.cos(lat * Math.PI/180);
-
-  return [newLat, newLng];
+// convert meters → lat/lng
+function metersToLatLng(dx, dy) {
+  const lat = ORIGIN_LAT + (dy / METERS_PER_LAT);
+  const lng = ORIGIN_LNG + (dx / (METERS_PER_LAT * Math.cos(ORIGIN_LAT * Math.PI/180)));
+  return [lat, lng];
 }
 
-// hex corner points
-function createHex(lat, lng, size) {
+// =========================
+// 🧱 HEX SHAPE
+// =========================
+function hexCorners(cx, cy) {
   const points = [];
 
   for (let i = 0; i < 6; i++) {
     const angle = (Math.PI / 3) * i;
-    const dx = size * Math.cos(angle);
-    const dy = size * Math.sin(angle);
 
-    const [pLat, pLng] = offsetLatLng(lat, lng, dx, dy);
-    points.push([pLat, pLng]);
+    const x = cx + HEX_SIZE * Math.cos(angle);
+    const y = cy + HEX_SIZE * Math.sin(angle);
+
+    const [lat, lng] = metersToLatLng(x, y);
+    points.push([lat, lng]);
   }
 
   return points;
 }
 
-// distance check (fast version)
-function dist(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const dLat = (lat2-lat1) * Math.PI/180;
-  const dLon = (lon2-lon1) * Math.PI/180;
+// =========================
+// 🧱 FIXED GRID GENERATION
+// =========================
+const hexes = [];
 
-  const a =
-    Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) *
-    Math.cos(lat2*Math.PI/180) *
-    Math.sin(dLon/2)**2;
-
-  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+function axialToPixel(q, r) {
+  const x = HEX_SIZE * 1.5 * q;
+  const y = HEX_SIZE * Math.sqrt(3) * (r + q / 2);
+  return {x, y};
 }
 
-// ============================
-// 🧩 BUILD HEX GRID
-// ============================
+for (let q = -GRID_RADIUS; q <= GRID_RADIUS; q++) {
+  for (let r = -GRID_RADIUS; r <= GRID_RADIUS; r++) {
 
-// how many hexes around player area
-const GRID_SIZE = 12;
+    const pos = axialToPixel(q, r);
 
-for (let x = -GRID_SIZE; x <= GRID_SIZE; x++) {
-  for (let y = -GRID_SIZE; y <= GRID_SIZE; y++) {
+    const latlng = metersToLatLng(pos.x, pos.y);
 
-    const dx = x * 45;  // spacing
-    const dy = y * 40;
-
-    const [lat, lng] = offsetLatLng(centerLat, centerLng, dx, dy);
-
-    const hex = {
-      lat,
-      lng,
-      owner: "neutral",
-      poly: null
-    };
-
-    const polygon = L.polygon(createHex(lat, lng, HEX_RADIUS), {
+    const poly = L.polygon(hexCorners(pos.x, pos.y), {
       color: "gray",
       fillColor: "gray",
-      fillOpacity: 0.3,
+      fillOpacity: 0.25,
       weight: 1
     }).addTo(map);
 
-    hex.poly = polygon;
-    hexes.push(hex);
+    hexes.push({
+      q, r,
+      x: pos.x,
+      y: pos.y,
+      lat: latlng[0],
+      lng: latlng[1],
+      owner: "neutral",
+      poly
+    });
   }
 }
 
-// ============================
+// =========================
 // 👤 PLAYER
-// ============================
+// =========================
 let playerMarker = null;
 
-// ============================
+// distance in meters (approx planar)
+function dist2(x1,y1,x2,y2){
+  return Math.sqrt((x1-x2)**2 + (y1-y2)**2);
+}
+
+// =========================
 // 🎮 GAME LOGIC
-// ============================
+// =========================
 function updatePlayer(lat, lng) {
 
   if (!playerMarker) {
@@ -145,20 +135,23 @@ function updatePlayer(lat, lng) {
     playerMarker.setLatLng([lat, lng]);
   }
 
-  // check nearest hex
+  // convert player position to game plane
+  const dx = (lng - ORIGIN_LNG) * METERS_PER_LAT * Math.cos(ORIGIN_LAT*Math.PI/180);
+  const dy = (lat - ORIGIN_LAT) * METERS_PER_LAT;
+
   let nearest = null;
-  let bestDist = Infinity;
+  let best = Infinity;
 
   for (const h of hexes) {
-    const d = dist(lat, lng, h.lat, h.lng);
-    if (d < bestDist) {
-      bestDist = d;
+    const d = dist2(dx, dy, h.x, h.y);
+    if (d < best) {
+      best = d;
       nearest = h;
     }
   }
 
-  // capture logic (entering hex)
-  if (nearest && bestDist < 30) {
+  // capture rule
+  if (nearest && best < HEX_SIZE) {
     nearest.owner = "you";
 
     nearest.poly.setStyle({
@@ -166,24 +159,20 @@ function updatePlayer(lat, lng) {
       fillColor: "blue"
     });
   }
-}
-
-// ============================
-// 📍 GPS TRACKING
-// ============================
-navigator.geolocation.watchPosition((pos) => {
-  const lat = pos.coords.latitude;
-  const lng = pos.coords.longitude;
-
-  map.setView([lat, lng], 17);
-
-  updatePlayer(lat, lng);
 
   document.getElementById("hud").innerHTML =
-    `Hex game active<br>
+    `Fixed Hex Game<br>
+     Hexes: ${hexes.length}<br>
      Lat: ${lat.toFixed(5)}<br>
      Lng: ${lng.toFixed(5)}`;
+}
 
+// =========================
+// 📍 GPS
+// =========================
+navigator.geolocation.watchPosition((pos) => {
+  updatePlayer(pos.coords.latitude, pos.coords.longitude);
+  map.setView([pos.coords.latitude, pos.coords.longitude], 17);
 });
 
 </script>
