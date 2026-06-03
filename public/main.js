@@ -244,8 +244,4 @@ navigator.geolocation.watchPosition(
     {
         enableHighAccuracy: true
     }
-<<<<<<< Updated upstream
 );
-=======
-);
->>>>>>> Stashed changes
