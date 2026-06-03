@@ -5,13 +5,9 @@ if (!playerId) {
     localStorage.setItem("playerId", playerId);
 }
 
-// =========================
-// BACKEND PLAYER COLOR
-// =========================
-
 let playerColor = null;
 
-async function loadPlayerColor() {
+async function loadPlayer() {
     const res = await fetch("/player", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,11 +30,11 @@ const map = L.map("map").setView([ORIGIN_LAT, ORIGIN_LNG], 15);
 const roads = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 
 const satellite = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}"
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 );
 
 const labels = L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{x}/{y}"
+    "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
 );
 
 satellite.addTo(map);
@@ -106,14 +102,14 @@ function drawTile(tileX, tileY, color) {
 
     rendered.set(key, poly);
 
-    // fade in
+    // smooth fade-in
     let opacity = 0;
 
     const step = setInterval(() => {
         opacity += 0.1;
 
         if (opacity >= 0.4) {
-            opacity = 0.4;
+            opacity = 0.5;
             clearInterval(step);
         }
 
@@ -123,23 +119,34 @@ function drawTile(tileX, tileY, color) {
 }
 
 // =========================
-// LOAD WORLD FROM DB
+// LOAD WORLD FROM DB (IMPORTANT PART)
 // =========================
 
 async function loadWorldFromDB() {
-    const res = await fetch("/territory");
-    const data = await res.json();
+    try {
+        const res = await fetch("/territory");
+        const data = await res.json();
 
-    for (const key in data) {
-        const [x, y] = key.split(",").map(Number);
-        drawTile(x, y, data[key].color);
+        for (const key in data) {
+            const [x, y] = key.split(",").map(Number);
+            drawTile(x, y, data[key].color);
+        }
+
+        console.log("World loaded from DB:", Object.keys(data).length, "tiles");
+
+    } catch (err) {
+        console.error("Failed to load world:", err);
     }
-
-    console.log("World loaded:", Object.keys(data).length);
 }
 
+(async () => {
+
+    await loadPlayer();       
+    await loadWorldFromDB();  
+
+})();
 // =========================
-// PLAYER UPDATE
+// PLAYER
 // =========================
 
 function updatePlayer(lat, lng) {
@@ -170,7 +177,7 @@ function updatePlayer(lat, lng) {
 }
 
 // =========================
-// WEBSOCKET
+// WEBSOCKET (REALTIME SYNC)
 // =========================
 
 const socket = new WebSocket(`ws://${location.host}/ws`);
@@ -184,7 +191,7 @@ socket.onmessage = (event) => {
 };
 
 // =========================
-// MAP SWITCH
+// MAP SWITCH BUTTON
 // =========================
 
 window.addEventListener("DOMContentLoaded", () => {
@@ -220,25 +227,20 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // =========================
-// START GAME (IMPORTANT)
+// GPS TRACKING
 // =========================
 
-(async () => {
+navigator.geolocation.watchPosition(
+    (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
 
-    await loadPlayerColor();
-    await loadWorldFromDB();
+        map.setView([lat, lng], 16);
 
-    navigator.geolocation.watchPosition(
-        (pos) => {
-            const lat = pos.coords.latitude;
-            const lng = pos.coords.longitude;
-
-            map.setView([lat, lng], 16);
-
-            updatePlayer(lat, lng);
-        },
-        () => alert("GPS permission required"),
-        { enableHighAccuracy: true }
-    );
-
-})();
+        updatePlayer(lat, lng);
+    },
+    () => alert("GPS permission required"),
+    {
+        enableHighAccuracy: true
+    }
+);

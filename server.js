@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS territories (
 );
 `);
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS players (
+    id TEXT PRIMARY KEY,
+    color TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+`);
+
 // =========================
 // STATIC FILES
 // =========================
@@ -79,6 +87,30 @@ fastify.post("/claim", (req, reply) => {
     reply.send({ ok: true });
 });
 
+fastify.post("/player", (req, reply) => {
+    const { id } = req.body;
+
+    let row = db.prepare(`
+        SELECT color FROM players WHERE id = ?
+    `).get(id);
+
+    if (!row) {
+        const color =
+            '#' + Math.floor(Math.random() * 16777215)
+                .toString(16)
+                .padStart(6, '0');
+
+        db.prepare(`
+            INSERT INTO players (id, color, updated_at)
+            VALUES (?, ?, ?)
+        `).run(id, color, Date.now());
+
+        return reply.send({ color });
+    }
+
+    reply.send({ color: row.color });
+});
+
 // =========================
 // LOAD WORLD
 // =========================
@@ -98,6 +130,8 @@ fastify.get("/territory", () => {
 
     return result;
 });
+
+
 
 // =========================
 // START SERVER
