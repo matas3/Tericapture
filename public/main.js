@@ -18,10 +18,6 @@ async function loadPlayer() {
     playerColor = data.color;
 }
 
-// =========================
-// MAP
-// =========================
-
 const ORIGIN_LAT = 54.5599;
 const ORIGIN_LNG = 23.3541;
 
@@ -40,10 +36,6 @@ const labels = L.tileLayer(
 satellite.addTo(map);
 labels.addTo(map);
 
-// =========================
-// TILE SYSTEM
-// =========================
-
 const TILE_SIZE = 37;
 const METERS_PER_LAT = 111320;
 const COS_LAT = Math.cos(ORIGIN_LAT * Math.PI / 180);
@@ -52,9 +44,6 @@ const rendered = new Map();
 
 let playerMarker = null;
 
-// =========================
-// CONVERSION
-// =========================
 
 function metersToLatLng(x, y) {
     return [
@@ -63,16 +52,15 @@ function metersToLatLng(x, y) {
     ];
 }
 
-function latLngToMeters(lat, lng) {
+function latLngToMeters(
+    
+    lat, lng) {
     return {
         x: (lng - ORIGIN_LNG) * METERS_PER_LAT * COS_LAT,
         y: (lat - ORIGIN_LAT) * METERS_PER_LAT
     };
 }
 
-// =========================
-// DRAW TILE
-// =========================
 
 function drawTile(tileX, tileY, color) {
 
@@ -118,9 +106,6 @@ function drawTile(tileX, tileY, color) {
     }, 30);
 }
 
-// =========================
-// LOAD WORLD FROM DB (IMPORTANT PART)
-// =========================
 
 async function loadWorldFromDB() {
     try {
@@ -138,16 +123,79 @@ async function loadWorldFromDB() {
         console.error("Failed to load world:", err);
     }
 }
+async function loadLeaderboard() {
+    try {
+        const res = await fetch("/leaderboard");
+        const data = await res.json();
+
+        renderLeaderboard(data);
+
+    } catch (err) {
+        console.error("Failed to load leaderboard:", err);
+    }
+}
+
+function renderLeaderboard(data) {
+    const box = document.getElementById("leaderboard");
+
+    if (!box) return;
+
+    box.innerHTML = `
+        <div style="font-weight:bold;margin-bottom:8px;">
+            Leaderboard
+        </div>
+    `;
+
+    if (data.length === 0) {
+        box.innerHTML += `<div>No territories claimed yet</div>`;
+        return;
+    }
+
+    data.forEach((entry, index) => {
+        box.innerHTML += `
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-bottom:6px;
+                "
+            >
+                <div
+                    style="
+                        display:flex;
+                        align-items:center;
+                        gap:8px;
+                    "
+                >
+                    <span>${index + 1}.</span>
+
+                    <div
+                        style="
+                            width:16px;
+                            height:16px;
+                            background:${entry.color};
+                            border-radius:4px;
+                            border:1px solid white;
+                        "
+                    ></div>
+
+                    <span>${entry.color}</span>
+                </div>
+
+                <span>${entry.tiles}</span>
+            </div>
+        `;
+    });
+}
 
 (async () => {
 
-    await loadPlayer();       
-    await loadWorldFromDB();  
+    await loadPlayer();
+    await loadWorldFromDB();
+    await loadLeaderboard();
 
 })();
-// =========================
-// PLAYER
-// =========================
 
 function updatePlayer(lat, lng) {
 
@@ -176,10 +224,6 @@ function updatePlayer(lat, lng) {
     });
 }
 
-// =========================
-// WEBSOCKET (REALTIME SYNC)
-// =========================
-
 const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
 const socket = new WebSocket(`${wsProtocol}//${location.host}/ws`);
 
@@ -188,12 +232,11 @@ socket.onmessage = (event) => {
 
     if (data.type === "claim") {
         drawTile(data.x, data.y, data.color);
+
+        loadLeaderboard();
     }
 };
 
-// =========================
-// MAP SWITCH BUTTON
-// =========================
 
 window.addEventListener("DOMContentLoaded", () => {
 
@@ -227,9 +270,6 @@ window.addEventListener("DOMContentLoaded", () => {
     };
 });
 
-// =========================
-// GPS TRACKING
-// =========================
 
 navigator.geolocation.watchPosition(
     (pos) => {
@@ -245,3 +285,4 @@ navigator.geolocation.watchPosition(
         enableHighAccuracy: true
     }
 );
+

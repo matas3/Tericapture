@@ -4,23 +4,24 @@ const path = require("path");
 const Database = require("better-sqlite3");
 const db = new Database("data/game.db");
 
-// =========================
-// WEBSOCKETS
-// =========================
 fastify.register(require("@fastify/websocket"));
 
 const clients = new Set();
 
 function broadcast(data) {
     const msg = JSON.stringify(data);
+
     for (const client of clients) {
-        client.send(msg);
+        try {
+            if (client && typeof client.send === "function") {
+                client.send(msg);
+            }
+        } catch (err) {
+            clients.delete(client);
+        }
     }
 }
 
-// =========================
-// DATABASE
-// =========================
 db.exec(`
 CREATE TABLE IF NOT EXISTS territories (
     x INTEGER NOT NULL,
@@ -40,16 +41,10 @@ CREATE TABLE IF NOT EXISTS players (
 );
 `);
 
-// =========================
-// STATIC FILES
-// =========================
 fastify.register(require("@fastify/static"), {
     root: path.join(__dirname, "public"),
 });
 
-// =========================
-// WEBSOCKET ROUTE
-// =========================
 fastify.get("/ws", { websocket: true }, (connection) => {
     const socket = connection.socket;
 
@@ -60,9 +55,6 @@ fastify.get("/ws", { websocket: true }, (connection) => {
     });
 });
 
-// =========================
-// INSTANT CLAIM (STEAL SYSTEM)
-// =========================
 fastify.post("/claim", (req, reply) => {
     const { x, y, player, color } = req.body;
 
@@ -111,9 +103,6 @@ fastify.post("/player", (req, reply) => {
     reply.send({ color: row.color });
 });
 
-// =========================
-// LOAD WORLD
-// =========================
 fastify.get("/territory", () => {
     const rows = db.prepare(`
         SELECT x, y, player, color FROM territories
@@ -131,11 +120,19 @@ fastify.get("/territory", () => {
     return result;
 });
 
+fastify.get("/leaderboard", () => {
+    return db.prepare(`
+        SELECT
+            color,
+            COUNT(*) as tiles
+        FROM territories
+        GROUP BY color
+        ORDER BY tiles DESC
+    `).all();
+});
 
 
-// =========================
-// START SERVER
-// =========================
+
 fastify.listen({ port: 3000, host: "0.0.0.0" })
     .then(() => console.log("Server running on http://localhost:3000"))
     .catch(err => {
