@@ -286,3 +286,14 @@ navigator.geolocation.watchPosition(
     }
 );
 
+let isLeaderboardOpen = false
+
+function showLeaderboard() {
+    if (isLeaderboardOpen === false) {
+        document.getElementById('leaderboard').classList.remove("hidden")
+        isLeaderboardOpen = true
+    } else {
+        document.getElementById('leaderboard').classList.add("hidden")
+        isLeaderboardOpen = false
+    }
+}
